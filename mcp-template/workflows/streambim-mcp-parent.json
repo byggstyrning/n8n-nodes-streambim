@@ -1,0 +1,139 @@
+{
+	"name": "StreamBIM MCP Server",
+	"nodes": [
+		{
+			"parameters": {
+				"authentication": "none",
+				"path": "streambim-mcp"
+			},
+			"id": "d4e5f6a7-0001-4000-8000-000000000001",
+			"name": "MCP Server Trigger",
+			"type": "@n8n/n8n-nodes-langchain.mcpTrigger",
+			"typeVersion": 2,
+			"position": [420, 300]
+		},
+		{
+			"parameters": {
+				"description": "List StreamBIM projects (gateway JSON:API). Pass queryParametersJson as a JSON string for page[limit], page[skip], filter[active], etc.",
+				"source": "database",
+				"workflowId": {
+					"__rl": true,
+					"value": "",
+					"mode": "list",
+					"cachedResultName": "Import streambim-sub-list-projects.json first, then select it here"
+				},
+				"workflowInputs": {
+					"mappingMode": "defineBelow",
+					"value": {
+						"queryParametersJson": "={{ $json.queryParametersJson }}"
+					}
+				}
+			},
+			"id": "d4e5f6a7-0001-4000-8000-000000000002",
+			"name": "Tool_List_Projects",
+			"type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+			"typeVersion": 2.2,
+			"position": [180, 120]
+		},
+		{
+			"parameters": {
+				"description": "Invite a user to a StreamBIM project by email. Pass email, projectId, and optional inviteSsoProviders (comma-separated or JSON array string).",
+				"source": "database",
+				"workflowId": {
+					"__rl": true,
+					"value": "",
+					"mode": "list",
+					"cachedResultName": "Import streambim-sub-invite-user.json first, then select it here"
+				},
+				"workflowInputs": {
+					"mappingMode": "defineBelow",
+					"value": {
+						"email": "={{ $json.email }}",
+						"projectId": "={{ $json.projectId }}",
+						"inviteSsoProviders": "={{ $json.inviteSsoProviders }}"
+					}
+				}
+			},
+			"id": "d4e5f6a7-0001-4000-8000-000000000003",
+			"name": "Tool_Invite_User",
+			"type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+			"typeVersion": 2.2,
+			"position": [180, 300]
+		},
+		{
+			"parameters": {
+				"description": "List topics (issues) in a StreamBIM project. Pass projectId and optional topicQueryParametersJson for filters and pagination.",
+				"source": "database",
+				"workflowId": {
+					"__rl": true,
+					"value": "",
+					"mode": "list",
+					"cachedResultName": "Import streambim-sub-list-topics.json first, then select it here"
+				},
+				"workflowInputs": {
+					"mappingMode": "defineBelow",
+					"value": {
+						"projectId": "={{ $json.projectId }}",
+						"topicQueryParametersJson": "={{ $json.topicQueryParametersJson }}"
+					}
+				}
+			},
+			"id": "d4e5f6a7-0001-4000-8000-000000000004",
+			"name": "Tool_List_Topics",
+			"type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+			"typeVersion": 2.2,
+			"position": [180, 480]
+		},
+		{
+			"parameters": {
+				"content": "## StreamBIM MCP parent\n\n1. Import the three `streambim-sub-*.json` workflows.\n2. Open each **Call n8n Sub-Workflow Tool** node and **select the matching subworkflow** (workflow picker).\n3. Set **MCP Server Trigger** authentication (Bearer recommended for production).\n4. Assign **StreamBIM API** credentials on each subworkflow’s StreamBIM node.\n5. Activate and use the **Production MCP URL** in your MCP client.",
+				"height": 380,
+				"width": 460,
+				"color": 6
+			},
+			"id": "d4e5f6a7-0001-4000-8000-000000000005",
+			"name": "Sticky Note",
+			"type": "n8n-nodes-base.stickyNote",
+			"typeVersion": 1,
+			"position": [-60, 80]
+		}
+	],
+	"connections": {
+		"Tool_List_Projects": {
+			"ai_tool": [
+				[
+					{
+						"node": "MCP Server Trigger",
+						"type": "ai_tool",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Tool_Invite_User": {
+			"ai_tool": [
+				[
+					{
+						"node": "MCP Server Trigger",
+						"type": "ai_tool",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Tool_List_Topics": {
+			"ai_tool": [
+				[
+					{
+						"node": "MCP Server Trigger",
+						"type": "ai_tool",
+						"index": 0
+					}
+				]
+			]
+		}
+	},
+	"settings": {
+		"executionOrder": "v1"
+	}
+}

@@ -1,0 +1,69 @@
+{
+	"name": "StreamBIM MCP Sub: List Topics",
+	"nodes": [
+		{
+			"parameters": {
+				"workflowInputs": {
+					"values": [
+						{
+							"name": "projectId",
+							"type": "string"
+						},
+						{
+							"name": "topicQueryParametersJson",
+							"type": "string"
+						}
+					]
+				}
+			},
+			"id": "c3d4e5f6-0001-4000-8000-000000000001",
+			"name": "When called by a workflow tool",
+			"type": "n8n-nodes-base.executeWorkflowTrigger",
+			"typeVersion": 1.1,
+			"position": [0, 0]
+		},
+		{
+			"parameters": {
+				"resource": "topic",
+				"operation": "getMany",
+				"projectId": "={{ $json.projectId || 'YOUR_PROJECT_ID' }}",
+				"topicQueryParameters": "={{ $json.topicQueryParametersJson || '{\"page[limit]\": 50, \"page[skip]\": 0}' }}"
+			},
+			"id": "c3d4e5f6-0001-4000-8000-000000000002",
+			"name": "StreamBIM",
+			"type": "n8n-nodes-streambim.streamBim",
+			"typeVersion": 6,
+			"position": [220, 0],
+			"credentials": {
+				"streamBimApi": {
+					"id": "YOUR_STREAMBIM_CREDENTIAL_ID",
+					"name": "StreamBIM API"
+				}
+			}
+		}
+	],
+	"connections": {
+		"When called by a workflow tool": {
+			"main": [
+				[
+					{
+						"node": "StreamBIM",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		}
+	},
+	"settings": {
+		"executionOrder": "v1"
+	},
+	"meta": {
+		"templateCredsSetup": [
+			{
+				"name": "StreamBIM API",
+				"required": true
+			}
+		]
+	}
+}

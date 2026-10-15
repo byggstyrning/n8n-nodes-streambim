@@ -1,0 +1,74 @@
+{
+	"name": "StreamBIM MCP Sub: Invite User",
+	"nodes": [
+		{
+			"parameters": {
+				"workflowInputs": {
+					"values": [
+						{
+							"name": "email",
+							"type": "string"
+						},
+						{
+							"name": "projectId",
+							"type": "string"
+						},
+						{
+							"name": "inviteSsoProviders",
+							"type": "string"
+						}
+					]
+				}
+			},
+			"id": "b2c3d4e5-0001-4000-8000-000000000001",
+			"name": "When called by a workflow tool",
+			"type": "n8n-nodes-base.executeWorkflowTrigger",
+			"typeVersion": 1.1,
+			"position": [0, 0]
+		},
+		{
+			"parameters": {
+				"resource": "user",
+				"operation": "inviteUser",
+				"projectId": "={{ $json.projectId || 'YOUR_PROJECT_ID' }}",
+				"inviteEmail": "={{ $json.email }}",
+				"inviteSsoProviders": "={{ $json.inviteSsoProviders || '' }}"
+			},
+			"id": "b2c3d4e5-0001-4000-8000-000000000002",
+			"name": "StreamBIM",
+			"type": "n8n-nodes-streambim.streamBim",
+			"typeVersion": 6,
+			"position": [220, 0],
+			"credentials": {
+				"streamBimApi": {
+					"id": "YOUR_STREAMBIM_CREDENTIAL_ID",
+					"name": "StreamBIM API"
+				}
+			}
+		}
+	],
+	"connections": {
+		"When called by a workflow tool": {
+			"main": [
+				[
+					{
+						"node": "StreamBIM",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		}
+	},
+	"settings": {
+		"executionOrder": "v1"
+	},
+	"meta": {
+		"templateCredsSetup": [
+			{
+				"name": "StreamBIM API",
+				"required": true
+			}
+		]
+	}
+}

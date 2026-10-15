@@ -1,0 +1,21 @@
+{
+	"codex": {
+		"categories": ["Productivity"],
+		"subcategories": {
+			"Productivity": ["BIM"]
+		},
+		"alias": ["streambim", "ifc", "bim"],
+		"resources": {
+			"primaryDocumentation": [
+				{
+					"url": "https://streambim.com"
+				}
+			],
+			"credentialDocumentation": [
+				{
+					"url": "https://streambim.com"
+				}
+			]
+		}
+	}
+}

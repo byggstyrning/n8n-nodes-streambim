@@ -1,0 +1,81 @@
+{
+	"name": "n8n-nodes-streambim",
+	"version": "0.3.0",
+	"description": "n8n nodes for StreamBIM API integration",
+	"keywords": [
+		"n8n-community-node-package",
+		"streambim",
+		"bim",
+		"ifc"
+	],
+	"license": "MIT",
+	"homepage": "https://github.com/byggstyrning/n8n-nodes-streambim#readme",
+	"bugs": {
+		"url": "https://github.com/byggstyrning/n8n-nodes-streambim/issues"
+	},
+	"author": {
+		"name": "Byggstyrning",
+		"email": "jonatan.jacobsson@byggstyrning.se"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/byggstyrning/n8n-nodes-streambim.git"
+	},
+	"engines": {
+		"node": ">=18.10",
+		"pnpm": ">=7.0"
+	},
+	"packageManager": "pnpm@7.33.6",
+	"main": "index.js",
+	"scripts": {
+		"preinstall": "npx only-allow pnpm",
+		"build": "tsc && gulp build:icons",
+		"dev": "tsc --watch",
+		"format": "prettier nodes credentials --write",
+		"lint": "eslint nodes credentials package.json",
+		"lintfix": "eslint nodes credentials package.json --fix",
+		"test": "tsc && node --test test/",
+		"prepublishOnly": "pnpm build && pnpm lint -c .eslintrc.prepublish.js nodes credentials package.json"
+	},
+	"files": [
+		"dist"
+	],
+	"n8n": {
+		"n8nNodesApiVersion": 1,
+		"credentials": [
+			"dist/credentials/StreamBimApi.credentials.js"
+		],
+		"nodes": [
+			"dist/nodes/StreamBim/StreamBim.node.js"
+		]
+	},
+	"devDependencies": {
+		"@types/node": "^22.13.16",
+		"@typescript-eslint/parser": "^7.15.0",
+		"eslint": "^8.56.0",
+		"eslint-plugin-n8n-nodes-base": "^1.16.1",
+		"gulp": "^4.0.2",
+		"n8n-workflow": "^1.82.0",
+		"prettier": "^3.3.2",
+		"typescript": "^5.5.3"
+	},
+	"peerDependencies": {
+		"n8n-workflow": "*"
+	},
+	"pnpm": {
+		"overrides": {
+			"form-data": ">=4.0.4",
+			"axios": ">=1.13.5",
+			"braces": ">=3.0.3",
+			"lodash": ">=4.17.23",
+			"js-yaml": ">=4.1.1"
+		}
+	},
+	"overrides": {
+		"form-data": ">=4.0.4",
+		"axios": ">=1.13.5",
+		"braces": ">=3.0.3",
+		"lodash": ">=4.17.23",
+		"js-yaml": ">=4.1.1"
+	}
+}
