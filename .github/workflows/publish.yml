@@ -37,8 +37,9 @@ jobs:
           node-version: 20
           cache: pnpm
 
-      - name: Use an npm that supports trusted publishing (>= 11.5.1)
-        run: npm install -g npm@latest
+      # Trusted publishing needs npm >= 11.5.1. Pinned to 11.x: npm 12 needs Node >= 22.22.
+      - name: Use an npm that supports trusted publishing
+        run: npm install -g npm@^11.5.1
 
       - run: pnpm install --frozen-lockfile
 
