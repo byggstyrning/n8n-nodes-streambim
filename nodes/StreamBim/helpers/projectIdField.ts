@@ -71,6 +71,7 @@ const RESOURCES_ALWAYS_SHOW = [
 	'attachment',
 	'document',
 	'documentLabel',
+	'documentLink',
 	'documentRevision',
 	'folder',
 	'building',

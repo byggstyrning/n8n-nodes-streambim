@@ -1,6 +1,6 @@
 {
 	"name": "n8n-nodes-streambim",
-	"version": "0.3.0",
+	"version": "0.4.0",
 	"description": "n8n nodes for StreamBIM API integration",
 	"keywords": [
 		"n8n-community-node-package",

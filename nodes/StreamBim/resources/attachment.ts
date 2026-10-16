@@ -18,11 +18,19 @@ import {
 	type StreamBimTokenCache,
 } from '../../shared/GenericFunctions';
 import {
+	documentLinkBody,
+	linkTargetObjectId,
+	toExistingLink,
+	type LinkTarget,
+} from '../../shared/streamBimPropertyLinks';
+import {
 	buildFilterQs,
 	fixedCollectionPairsToObject,
 } from '../helpers/filters';
 import { getV8Pagination, paginationFields } from '../helpers/pagination';
 import { getProjectIdString, parseJsonBody, parseJsonQueryParameters } from './_runHelpers';
+
+const LINK_SHOW = { resource: ['attachment'], operation: ['linkDocument'] };
 
 export const attachmentOperations: INodePropertyOptions[] = [
 	{
@@ -42,6 +50,13 @@ export const attachmentOperations: INodePropertyOptions[] = [
 		value: 'getDownloadLink',
 		description: 'Resolve download path or URL for an attachment',
 		action: 'Get attachment download link',
+	},
+	{
+		name: 'Link Document',
+		value: 'linkDocument',
+		description:
+			'Attach a project document to an element, or to every element with a property value',
+		action: 'Link document to IFC object',
 	},
 	{
 		name: 'Upload to Topic',
@@ -94,6 +109,34 @@ export const attachmentProperties: INodeProperties[] = [
 							'Topic ID to filter attachments by (filter[parentTopic]). Use the Topic resource Get Many to discover IDs.',
 					},
 					{
+						displayName: 'IFC Object ID',
+						name: 'object',
+						type: 'string',
+						default: '',
+						description:
+							'Element GUID, or the ID of a property-value object (filter[object]). Needs Building.',
+					},
+					{
+						displayName: 'Building Name or ID',
+						name: 'building',
+						type: 'options',
+						typeOptions: {
+							loadOptionsDependsOn: ['projectId'],
+							loadOptionsMethod: 'getBuildings',
+						},
+						default: '',
+						description:
+							'Building of the IFC object (filter[building]). Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+					},
+					{
+						displayName: 'Include Removed',
+						name: 'withDeleted',
+						type: 'boolean',
+						default: false,
+						description:
+							'Whether to include soft-deleted attachments (withDeletedAttachments). Check is-deleted on each row.',
+					},
+					{
 						displayName: 'Category',
 						name: 'category',
 						type: 'options',
@@ -144,6 +187,135 @@ export const attachmentProperties: INodeProperties[] = [
 				operation: ['get', 'getDownloadLink'],
 			},
 		},
+	},
+
+	// ── Link Document ─────────────────────────────────────────────────────────
+	{
+		displayName: 'Document',
+		name: 'linkDocumentId',
+		type: 'resourceLocator',
+		default: { mode: 'id', value: '' },
+		required: true,
+		description: 'Project document to link. Pick from a 200-item hint list, paste an ID, or paste a StreamBIM URL.',
+		displayOptions: { show: LINK_SHOW },
+		modes: [
+			{
+				displayName: 'From List',
+				name: 'list',
+				type: 'list',
+				typeOptions: { searchListMethod: 'searchDocumentsHint', searchable: true },
+			},
+			{
+				displayName: 'By ID',
+				name: 'id',
+				type: 'string',
+				placeholder: '1002',
+				validation: [
+					{
+						type: 'regex',
+						properties: { regex: '^[0-9]+$', errorMessage: 'Document ID must be a positive integer' },
+					},
+				],
+			},
+			{
+				displayName: 'By URL',
+				name: 'url',
+				type: 'string',
+				placeholder: 'https://app.streambim.com/project-1/documents/1002/...',
+				extractValue: { type: 'regex', regex: '/documents/([0-9]+)(?:[/?#]|$)' },
+				validation: [
+					{
+						type: 'regex',
+						properties: {
+							regex: '.*/documents/[0-9]+(?:[/?#].*)?',
+							errorMessage: 'URL must contain /documents/{id}/',
+						},
+					},
+				],
+			},
+		],
+	},
+	{
+		displayName: 'Link To',
+		name: 'linkTarget',
+		type: 'options',
+		noDataExpression: true,
+		options: [
+			{
+				name: 'Property Value',
+				value: 'property',
+				description:
+					'Every element with this property value, including elements added later (e.g. all with Sheet Number A-101)',
+			},
+			{
+				name: 'Element',
+				value: 'element',
+				description: 'One element, by its IFC GUID',
+			},
+		],
+		default: 'property',
+		displayOptions: { show: LINK_SHOW },
+	},
+	{
+		displayName: 'Property',
+		name: 'linkProperty',
+		type: 'string',
+		required: true,
+		default: '',
+		placeholder: 'Text.Sheet Number',
+		description: 'Property set and property name, separated by a dot',
+		displayOptions: { show: { ...LINK_SHOW, linkTarget: ['property'] } },
+	},
+	{
+		displayName: 'Value',
+		name: 'linkValue',
+		type: 'string',
+		required: true,
+		default: '',
+		placeholder: 'A-101',
+		description: 'Property value whose elements get the document',
+		displayOptions: { show: { ...LINK_SHOW, linkTarget: ['property'] } },
+	},
+	{
+		displayName: 'Element GUID',
+		name: 'linkElementGuid',
+		type: 'string',
+		required: true,
+		default: '',
+		placeholder: '2xVoYhqg9CBvb8FmWO83Zc',
+		description: 'IFC GlobalId of the element',
+		displayOptions: { show: { ...LINK_SHOW, linkTarget: ['element'] } },
+	},
+	{
+		displayName: 'Skip If Already Linked',
+		name: 'linkSkipExisting',
+		type: 'boolean',
+		default: true,
+		description:
+			'Whether to return the existing link instead of adding a second one when the document is already linked there',
+		displayOptions: { show: LINK_SHOW },
+	},
+	{
+		displayName: 'Building Name or ID',
+		name: 'linkBuildingId',
+		type: 'options',
+		typeOptions: {
+			loadOptionsDependsOn: ['projectId'],
+			loadOptionsMethod: 'getBuildings',
+		},
+		default: '',
+		description:
+			'Building of the element, used for the duplicate check. Empty: the first building, which is fine for property values (their links are project-wide). Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+		displayOptions: { show: { ...LINK_SHOW, linkSkipExisting: [true] } },
+	},
+	{
+		displayName: 'Value Type',
+		name: 'linkValueType',
+		type: 'string',
+		default: 'str',
+		description:
+			'Type segment of the property value in StreamBIM ("str" for text). Change only for non-text properties.',
+		displayOptions: { show: { ...LINK_SHOW, linkTarget: ['property'] } },
 	},
 
 	// ── Upload to Topic ───────────────────────────────────────────────────────
@@ -265,6 +437,9 @@ export const attachmentProperties: INodeProperties[] = [
 type AttachmentFiltersForm = {
 	filter?: {
 		parentTopic?: string;
+		object?: string;
+		building?: string;
+		withDeleted?: boolean;
 		category?: string;
 	};
 };
@@ -296,11 +471,16 @@ export async function runAttachment(
 				{},
 			) as AttachmentFiltersForm;
 			const parentTopic = (form?.filter?.parentTopic ?? '').trim();
+			const object = (form?.filter?.object ?? '').trim();
+			const building = String(form?.filter?.building ?? '').trim();
 			const category = form?.filter?.category ?? '';
 			qs = buildFilterQs({
 				parentTopic: parentTopic || undefined,
+				object: object || undefined,
+				building: building || undefined,
 				category: category || undefined,
 			});
+			if (form?.filter?.withDeleted) qs.withDeletedAttachments = 'true';
 		}
 		const response = await streamBimJsonApiGetMany.call(
 			ctx,
@@ -334,6 +514,10 @@ export async function runAttachment(
 			{},
 		);
 		return { downloadPathOrUrl: text };
+	}
+
+	if (operation === 'linkDocument') {
+		return await linkDocument(ctx, i, projectId, base, tokenCache);
 	}
 
 	if (operation === 'uploadToTopic') {
@@ -410,4 +594,75 @@ export async function runAttachment(
 	}
 
 	throw new NodeOperationError(ctx.getNode(), `Unknown attachment operation: ${operation}`);
+}
+
+async function linkDocument(
+	ctx: IExecuteFunctions,
+	i: number,
+	projectId: string,
+	base: string,
+	tokenCache: StreamBimTokenCache,
+): Promise<IDataObject> {
+	const documentId = String(
+		ctx.getNodeParameter('linkDocumentId', i, '', { extractValue: true }) ?? '',
+	).trim();
+	if (!documentId) {
+		throw new NodeOperationError(ctx.getNode(), 'Document is required', { itemIndex: i });
+	}
+	const targetKind = ctx.getNodeParameter('linkTarget', i, 'property') as string;
+	const target: LinkTarget =
+		targetKind === 'element'
+			? { kind: 'element', guid: ctx.getNodeParameter('linkElementGuid', i, '') as string }
+			: {
+					kind: 'property',
+					property: ctx.getNodeParameter('linkProperty', i, '') as string,
+					value: ctx.getNodeParameter('linkValue', i, '') as string,
+					valueType: ctx.getNodeParameter('linkValueType', i, 'str') as string,
+				};
+	let objectId: string;
+	try {
+		objectId = linkTargetObjectId(target);
+	} catch (error) {
+		throw new NodeOperationError(ctx.getNode(), (error as Error).message, { itemIndex: i });
+	}
+
+	if (ctx.getNodeParameter('linkSkipExisting', i, true) as boolean) {
+		let buildingId = String(ctx.getNodeParameter('linkBuildingId', i, '') ?? '').trim();
+		if (!buildingId) {
+			const buildings = (await streamBimJsonApiRequest.call(
+				ctx,
+				'GET',
+				`/project-${projectId}/api/v1/v2/buildings`,
+				tokenCache,
+				undefined,
+				{},
+			)) as IDataObject;
+			const first = ((buildings?.data as IDataObject[]) ?? [])[0];
+			buildingId = first ? String(first.id) : '';
+		}
+		if (buildingId) {
+			const res = (await streamBimJsonApiRequest.call(ctx, 'GET', base, tokenCache, undefined, {
+				'filter[object]': objectId,
+				'filter[building]': buildingId,
+				withDeletedAttachments: 'true',
+			})) as IDataObject;
+			const rows = (Array.isArray(res?.data) ? res.data : []) as IDataObject[];
+			const existing = rows.find((row) => {
+				const link = toExistingLink(row);
+				return link !== undefined && !link.isDeleted && link.documentId === documentId;
+			});
+			if (existing) return { ...existing, objectId, alreadyLinked: true };
+		}
+	}
+
+	const created = (await streamBimJsonApiRequest.call(
+		ctx,
+		'POST',
+		base,
+		tokenCache,
+		documentLinkBody(objectId, documentId),
+		{},
+	)) as IDataObject;
+	const record = (created?.data ?? created) as IDataObject;
+	return { ...record, objectId, alreadyLinked: false };
 }
