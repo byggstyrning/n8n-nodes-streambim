@@ -96,11 +96,12 @@ This package ships **one node**:
 - **Checklist** — Checklist export and listing.
 - **User** — Users, invites, groups, email settings, project members (global and project-scoped lists), deactivate project member (inactive / privilege-level 0).
 - **Workflow** — Project workflows CRUD.
-- **Attachment** — List, download, upload to topic (incl. presigned upload flow).
+- **Attachment** — List (also by IFC object + building), download, upload to topic (incl. presigned upload flow). **Link Document** attaches a project document to one element (GUID) or to a property value, i.e. to every element that has it; with *Skip If Already Linked* it never adds a duplicate.
 - **Building** — List/get buildings (model layers, floor plan layer, floors).
 - **Floor** — List/get floors; set or clear a floor's custom floor plan document.
 - **Document Alignment** — A 2D document (PDF/DWG) placed in a building: display name, two image/world control points, optional mask. List, get, create, delete (`{documentId}-{buildingId}`).
 - **Relink** — Move model-layer, placement and floor-plan mappings from deleted documents to their successors after a file moved in the source CDE. See [Relink](#relink-after-a-move-in-the-source-cde).
+- **Document Link** — Keep documents linked to the elements that name them: e.g. every element with `Text.Sheet Number = A-101` gets the drawing `A-101.pdf`. Links to deleted documents are removed. See [Document links by property](#document-links-by-property).
 - **Document** — Documents (PDFs, drawings, IFC files), folders, download links, export JSON. **Upload** upserts a file into a folder (creates a new document or adds a revision when the filename already exists in that folder). Create/Update are for metadata-only changes without re-uploading bytes. Get Many can filter by ifc-file assignment per building (`Missing IFC File` + `IFC File Building`), by `External ID` (the sync integration's id) and by `Since`.
 
 **Important distinction:** **Document** and **Attachment** are separate resources in StreamBIM:
@@ -180,6 +181,37 @@ Notes:
 - **Floor PATCH replaces the whole record.** The Floor resource and Relink always send back name, height, hidden and floor bounds.
 - **A sync trigger can be lost.** StreamBIM may answer OK and never sync, so Plan re-triggers after 2 minutes with no sign of a sync.
 - **A sync that outlasts the timeout** is planned on the current state and marked `sync.finished: false`.
+
+### Document links by property
+
+**Document Link → Sync by Property** links documents to elements by a property value. It is built to run nightly from a Schedule Trigger.
+
+| Field | Example | Meaning |
+|-------|---------|---------|
+| **Property** | `Text.Sheet Number` | Property set and property name. Every element that has it is included. |
+| **File Extensions** | `pdf` | Document types that may be linked. Empty means any. |
+| **Remove Links to Deleted Documents** | on | Removes links whose document was deleted or moved at the source. |
+| **Dry Run** | on | Only reports. Turn it off to write. |
+
+**What a run does**
+
+1. **Finds the values.** An IFC search per building finds every element where the property exists. The elements are grouped by value.
+2. **Links each value.** Each value is a StreamBIM *property-based virtual object*. A link on it shows on every element with that value, including elements added later.
+3. **Finds the document.** It is the one live document whose filename without extension equals the value (case-insensitive). If two or more documents match, the value is reported as `ambiguous` and nothing is linked.
+4. **Leaves existing links alone.** That includes links to other documents.
+5. **Respects manual removals.** A link someone removed by hand is not created again, unless **Link Again After Manual Removal** is set.
+6. **Removes dead links.** A link is removed when its document was soft-deleted or no longer exists. Each one is confirmed with a GET first. When a file moves at the source, StreamBIM soft-deletes the old document and creates a new one, so the same run links the new document and removes the old link.
+7. **Follows revisions.** A link points at the document, not at a revision, so a new revision needs no change.
+
+**Output** (option): one item per value (default), changes only, or a single summary.
+
+- `link`: `planned` / `created` / `exists` / `removed_by_user` / `none` / `error`.
+- `unlinked`: the removed links, each with a `reason` of `document_deleted` or `document_missing`.
+
+Limits:
+
+- Links on values that no element carries any more are not visited, because StreamBIM cannot list attachments without the value.
+- The match is on the exact filename stem: `A-101 rev B.pdf` does not match `A-101`.
 
 ---
 

@@ -75,6 +75,11 @@ import {
 	runDocument,
 } from './resources/document';
 import {
+	documentLinkOperations,
+	documentLinkProperties,
+	runDocumentLink,
+} from './resources/documentLink';
+import {
 	documentLabelOperations,
 	documentLabelProperties,
 	runDocumentLabel,
@@ -189,6 +194,12 @@ const resourceField: INodeProperties = {
 			action: 'Use document labels',
 		},
 		{
+			name: 'Document Link',
+			value: 'documentLink',
+			description: 'Link documents to elements by property value, e.g. drawings by sheet number',
+			action: 'Use document links',
+		},
+		{
 			name: 'Floor',
 			value: 'floor',
 			description: 'Floors and their custom floor plan document',
@@ -266,6 +277,7 @@ const operationFields: INodeProperties[] = [
 	operationFieldForResource('document', documentOperations, 'getMany'),
 	operationFieldForResource('folder', folderOperations, 'getMany'),
 	operationFieldForResource('documentLabel', documentLabelOperations, 'getMany'),
+	operationFieldForResource('documentLink', documentLinkOperations, 'syncByProperty'),
 	operationFieldForResource('documentRevision', documentRevisionOperations, 'getMany'),
 	operationFieldForResource('building', buildingOperations, 'getMany'),
 	operationFieldForResource('floor', floorOperations, 'getMany'),
@@ -419,6 +431,7 @@ const allResourceProperties: INodeProperties[] = [
 	...documentProperties,
 	...folderProperties,
 	...documentLabelProperties,
+	...documentLinkProperties,
 	...documentRevisionProperties,
 	...buildingProperties,
 	...floorProperties,
@@ -462,7 +475,7 @@ export class StreamBim implements INodeType {
 		group: ['transform'],
 		version: 8,
 		subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
-		description: 'StreamBIM API: projects, buildings, floors, IFC files, document alignments, relink, IFC search, converter jobs, sync, users, workflows, topics, checklists, attachments, documents',
+		description: 'StreamBIM API: projects, buildings, floors, IFC files, document alignments, relink, IFC search, converter jobs, sync, users, workflows, topics, checklists, attachments, documents, document links',
 		usableAsTool: true,
 		defaults: {
 			name: 'StreamBIM',
@@ -619,6 +632,8 @@ export class StreamBim implements INodeType {
 					responseData = await runDocument(this, operation, i, tokenCache, items);
 				} else if (resource === 'folder') {
 					responseData = await runFolder(this, operation, i, tokenCache);
+				} else if (resource === 'documentLink') {
+					responseData = await runDocumentLink(this, operation, i, tokenCache);
 				} else if (resource === 'documentLabel') {
 					responseData = await runDocumentLabel(this, operation, i, tokenCache);
 				} else if (resource === 'documentRevision') {
