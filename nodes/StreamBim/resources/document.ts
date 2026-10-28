@@ -37,6 +37,7 @@ import {
 	readBinaryForUpload,
 	uploadDocumentToFolder,
 } from '../../shared/streamBimUploadTicket';
+import { cleanDownloadLink, resolveDownloadUrl } from '../../shared/streamBimDownloadLink';
 
 const ALL_PAGES_PAGINATION = {
 	mode: 'all' as const,
@@ -677,19 +678,18 @@ export async function runDocument(
 		);
 		const credentials = await ctx.getCredentials('streamBimApi');
 		const baseUrl = getStreamBimBaseUrl(credentials as IDataObject, tokenCache);
-		// API may return a quoted JSON string, a relative path, an absolute path, or a full URL.
-		const cleaned = (rawResponse ?? '').toString().trim().replace(/^"+|"+$/g, '');
-		let downloadUrl: string;
-		if (/^https?:\/\//i.test(cleaned)) {
-			downloadUrl = cleaned;
-		} else if (cleaned.startsWith('/')) {
-			downloadUrl = `${baseUrl}${cleaned}`;
-		} else {
-			downloadUrl = `${baseUrl}${documentBase}/${cleaned}`;
+		// API may return a quoted JSON string, a path relative to the project API root, or a full URL.
+		const cleaned = cleanDownloadLink(rawResponse);
+		if (!cleaned) {
+			throw new NodeOperationError(
+				ctx.getNode(),
+				`StreamBIM returned an empty download link for document ${documentId}`,
+				{ itemIndex: i },
+			);
 		}
 		return {
 			downloadPathOrUrl: cleaned,
-			downloadUrl,
+			downloadUrl: resolveDownloadUrl(baseUrl, projectId, cleaned),
 			environment: baseUrl,
 			projectId,
 			documentId,
