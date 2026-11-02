@@ -241,6 +241,55 @@ function documentIsDeleted(doc: IDataObject): boolean {
 	return attrs?.['is-deleted'] === true;
 }
 
+/**
+ * Fail when the target folder or any folder above it is deleted. StreamBIM's document listing
+ * reports every document under a deleted folder as `is-deleted: true` (the document's own GET
+ * says false), from the moment it is uploaded: the same-name lookup then never finds it, and
+ * the next upload of that name fails with 409 "documents_uniq_filename" (verified 2026-10-13).
+ */
+async function assertFolderTreeNotDeleted(
+	ctx: IExecuteFunctions,
+	projectId: string,
+	folderId: string,
+	tokenCache: StreamBimTokenCache,
+): Promise<void> {
+	const response = (await streamBimJsonApiGetMany.call(
+		ctx,
+		`/project-${projectId}/api/v1/v2/folders`,
+		tokenCache,
+		{},
+		FOLDER_LIST_PAGINATION,
+	)) as IDataObject;
+	const folders = new Map<string, IDataObject>();
+	for (const f of Array.isArray(response.data) ? (response.data as IDataObject[]) : []) {
+		folders.set(String(f.id), f);
+	}
+
+	const target = String(folderId).trim();
+	const seen = new Set<string>();
+	let id: string | null = target;
+	while (id && !seen.has(id)) {
+		seen.add(id);
+		const folder = folders.get(id);
+		if (!folder) {
+			if (id === target) {
+				throw new NodeOperationError(ctx.getNode(), `StreamBIM folder ${target} does not exist in project ${projectId}`);
+			}
+			return;
+		}
+		const attrs = folder.attributes as IDataObject | undefined;
+		if (attrs?.['is-deleted'] === true) {
+			const where = id === target ? `Folder ${target} is deleted` : `Folder ${target} is inside folder ${id}, which is deleted`;
+			const since = attrs['deleted-date'] ? ` (since ${String(attrs['deleted-date'])})` : '';
+			throw new NodeOperationError(
+				ctx.getNode(),
+				`${where} in StreamBIM${since}. StreamBIM lists every document under a deleted folder as deleted, so a document uploaded there cannot be found again and the next upload of the same name fails. Restore folder ${id} in StreamBIM or upload to a folder outside it. Nothing was uploaded.`,
+			);
+		}
+		id = documentParentFolderId(folder) || null;
+	}
+}
+
 export async function findDocumentInFolder(
 	ctx: IExecuteFunctions,
 	projectId: string,
@@ -248,6 +297,21 @@ export async function findDocumentInFolder(
 	filename: string,
 	tokenCache: StreamBimTokenCache,
 ): Promise<IDataObject | null> {
+	return (await findSameNameDocuments(ctx, projectId, folderId, filename, tokenCache)).live;
+}
+
+/**
+ * The live document with this name in the folder, and a deleted one if there is one. A document
+ * marked `is-deleted` is still listed and still holds its name: creating a new document of the
+ * same name then fails with 409 "documents_uniq_filename" (seen 2026-10-12 and 10-13).
+ */
+async function findSameNameDocuments(
+	ctx: IExecuteFunctions,
+	projectId: string,
+	folderId: string,
+	filename: string,
+	tokenCache: StreamBimTokenCache,
+): Promise<{ live: IDataObject | null; deleted: IDataObject | null }> {
 	const targetFolderId = String(folderId).trim();
 	if (!targetFolderId) {
 		throw new NodeOperationError(ctx.getNode(), 'Folder ID is required for document lookup');
@@ -266,13 +330,17 @@ export async function findDocumentInFolder(
 	)) as IDataObject;
 
 	const docs = Array.isArray(response.data) ? (response.data as IDataObject[]) : [];
+	let deleted: IDataObject | null = null;
 	for (const doc of docs) {
-		if (documentIsDeleted(doc)) continue;
 		if (documentFilename(doc) !== filename) continue;
 		if (documentParentFolderId(doc) !== targetFolderId) continue;
-		return doc;
+		if (documentIsDeleted(doc)) {
+			deleted = deleted ?? doc;
+			continue;
+		}
+		return { live: doc, deleted };
 	}
-	return null;
+	return { live: null, deleted };
 }
 
 export type DocumentUploadResult = {
@@ -296,7 +364,24 @@ export async function uploadDocumentToFolder(
 	tokenCache: StreamBimTokenCache,
 	opts?: { description?: string; externalId?: string },
 ): Promise<DocumentUploadResult> {
-	const existing = await findDocumentInFolder(ctx, projectId, folderId, filename, tokenCache);
+	await assertFolderTreeNotDeleted(ctx, projectId, folderId, tokenCache);
+	const { live: existing, deleted } = await findSameNameDocuments(
+		ctx,
+		projectId,
+		folderId,
+		filename,
+		tokenCache,
+	);
+	// Checked before anything is transferred: the create below would fail on the name anyway,
+	// only after the whole file had been uploaded. Restoring or purging the deleted document is
+	// left to a person; the node must not decide that.
+	if (!existing && deleted) {
+		const deletedDate = (deleted.attributes as IDataObject | undefined)?.['deleted-date'];
+		throw new NodeOperationError(
+			ctx.getNode(),
+			`A document named "${filename}" in this StreamBIM folder is marked deleted${deletedDate ? ` (${String(deletedDate)})` : ''} but still reserves the name, so a new document of that name cannot be created. Nothing was uploaded. Restore the document in StreamBIM, or upload under another name.`,
+		);
+	}
 
 	const { uploadTicketId, presignedUrl } = await createUploadTicket(
 		ctx,
