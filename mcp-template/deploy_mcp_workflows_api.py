@@ -8,6 +8,8 @@ Requires:
 
 Optional:
   STREAMBIM_CREDENTIAL_ID — replaces YOUR_STREAMBIM_CREDENTIAL_ID on StreamBIM nodes
+  MCP_BEARER_CREDENTIAL_ID — replaces YOUR_MCP_BEARER_CREDENTIAL_ID on the MCP Server Trigger
+                             (an n8n "HTTP Bearer Auth" credential for MCP clients)
   N8N_EXTERNAL_URL        — printed in summary links (defaults to N8N_API_URL)
 
 Usage:
@@ -15,6 +17,10 @@ Usage:
   python3 deploy_mcp_workflows_api.py
   python3 deploy_mcp_workflows_api.py --dry-run
   python3 deploy_mcp_workflows_api.py --activate
+
+The MCP Server Trigger ships with Bearer auth. On re-deploy, authentication already set on
+the existing trigger is kept. --activate refuses to publish a trigger with no authentication
+or with the placeholder credential.
 """
 
 from __future__ import annotations
@@ -122,21 +128,66 @@ def strip_for_put(wf: dict) -> dict:
     return body
 
 
-def post_payload_from_export(export: dict, credential_id: str | None) -> dict:
+MCP_TRIGGER_TYPE = "@n8n/n8n-nodes-langchain.mcpTrigger"
+MCP_BEARER_PLACEHOLDER = "YOUR_MCP_BEARER_CREDENTIAL_ID"
+
+
+def post_payload_from_export(
+    export: dict,
+    credential_id: str | None,
+    mcp_credential_id: str | None = None,
+) -> dict:
     """Body for POST /workflows (export JSON from file)."""
     nodes = deepcopy(export["nodes"])
-    if credential_id:
-        for node in nodes:
-            creds = node.get("credentials") or {}
-            sb = creds.get("streamBimApi")
-            if isinstance(sb, dict) and sb.get("id") == "YOUR_STREAMBIM_CREDENTIAL_ID":
-                sb["id"] = credential_id
+    for node in nodes:
+        creds = node.get("credentials") or {}
+        sb = creds.get("streamBimApi")
+        if credential_id and isinstance(sb, dict) and sb.get("id") == "YOUR_STREAMBIM_CREDENTIAL_ID":
+            sb["id"] = credential_id
+        bearer = creds.get("httpBearerAuth")
+        if mcp_credential_id and isinstance(bearer, dict) and bearer.get("id") == MCP_BEARER_PLACEHOLDER:
+            bearer["id"] = mcp_credential_id
     return {
         "name": export["name"],
         "nodes": nodes,
         "connections": export["connections"],
         "settings": export.get("settings") or {"executionOrder": "v1"},
     }
+
+
+def keep_trigger_auth(current_nodes: list[dict], fresh_nodes: list[dict]) -> None:
+    """
+    Keep authentication the operator already set on the live MCP Server Trigger.
+
+    A re-deploy replaces every node with the template's. Without this, auth added by hand in
+    the n8n UI would be reset to the template's (placeholder) value while the workflow stays active.
+    """
+    live = {n.get("name"): n for n in current_nodes if n.get("type") == MCP_TRIGGER_TYPE}
+    for node in fresh_nodes:
+        if node.get("type") != MCP_TRIGGER_TYPE:
+            continue
+        old = live.get(node.get("name"))
+        if not old:
+            continue
+        old_auth = (old.get("parameters") or {}).get("authentication", "none")
+        if old_auth == "none" or not old.get("credentials"):
+            continue
+        node.setdefault("parameters", {})["authentication"] = old_auth
+        node["credentials"] = deepcopy(old["credentials"])
+
+
+def unsecured_triggers(nodes: list[dict]) -> list[str]:
+    """Names of MCP Server Triggers that have no auth or only the placeholder credential."""
+    bad: list[str] = []
+    for node in nodes:
+        if node.get("type") != MCP_TRIGGER_TYPE:
+            continue
+        auth = (node.get("parameters") or {}).get("authentication", "none")
+        creds = node.get("credentials") or {}
+        ids = [c.get("id") for c in creds.values() if isinstance(c, dict)]
+        if auth == "none" or not ids or any(i in (None, "", MCP_BEARER_PLACEHOLDER) for i in ids):
+            bad.append(str(node.get("name")))
+    return bad
 
 
 def patch_parent_tool_refs(parent_export: dict, ids: dict[str, str]) -> dict:
@@ -172,17 +223,20 @@ def save_workflow(
     credential_id: str | None,
     existing_id: str | None,
     dry_run: bool,
-) -> str:
+    mcp_credential_id: str | None = None,
+) -> tuple[str, list[dict]]:
+    """Create or update a workflow. Returns (workflow id, nodes as saved)."""
     if dry_run:
-        payload = post_payload_from_export(export, credential_id)
+        payload = post_payload_from_export(export, credential_id, mcp_credential_id)
         print(f"[dry-run] {'PUT' if existing_id else 'POST'} {export['name']!r} size={len(json.dumps(payload))}")
-        return existing_id or "dry-run-id"
+        return existing_id or "dry-run-id", payload["nodes"]
 
     if existing_id:
         status, current = api_request("GET", base, f"/api/v1/workflows/{existing_id}", api_key)
         if status != 200 or not isinstance(current, dict):
             raise RuntimeError(f"GET workflow {existing_id} failed: {status} {current}")
-        fresh = post_payload_from_export(export, credential_id)
+        fresh = post_payload_from_export(export, credential_id, mcp_credential_id)
+        keep_trigger_auth(current.get("nodes") or [], fresh["nodes"])
         body = strip_for_put(current)
         body["name"] = fresh["name"]
         body["nodes"] = fresh["nodes"]
@@ -193,15 +247,15 @@ def save_workflow(
             raise RuntimeError(f"PUT workflow {existing_id} failed HTTP {status}: {updated}")
         if not isinstance(updated, dict) or "id" not in updated:
             raise RuntimeError(f"Unexpected PUT response: {updated!r}")
-        return updated["id"]
+        return updated["id"], updated.get("nodes") or fresh["nodes"]
 
-    payload = post_payload_from_export(export, credential_id)
+    payload = post_payload_from_export(export, credential_id, mcp_credential_id)
     status, created = api_request("POST", base, "/api/v1/workflows", api_key, payload)
     if status != 200:
         raise RuntimeError(f"POST workflow failed HTTP {status}: {created}")
     if not isinstance(created, dict) or "id" not in created:
         raise RuntimeError(f"Unexpected POST response: {created!r}")
-    return created["id"]
+    return created["id"], created.get("nodes") or payload["nodes"]
 
 
 def activate_workflow(base: str, api_key: str, workflow_id: str, dry_run: bool) -> None:
@@ -237,6 +291,7 @@ def main() -> int:
 
     external = env("N8N_EXTERNAL_URL", base)
     cred_id = env("STREAMBIM_CREDENTIAL_ID")
+    mcp_cred_id = env("MCP_BEARER_CREDENTIAL_ID")
     if not cred_id and not args.dry_run:
         print(
             "warning: STREAMBIM_CREDENTIAL_ID not set; StreamBIM nodes keep placeholder id "
@@ -267,7 +322,7 @@ def main() -> int:
     for key in ("list_projects", "invite_user", "list_topics"):
         ex = exports[key]
         existing = find_workflow_id_by_name(workflows, ex["name"]) if workflows else None
-        ids[key] = save_workflow(
+        ids[key], _ = save_workflow(
             base,
             api_key or "",
             ex,
@@ -281,17 +336,29 @@ def main() -> int:
     parent_existing = (
         find_workflow_id_by_name(workflows, parent_patched["name"]) if workflows else None
     )
-    parent_id = save_workflow(
+    parent_id, parent_nodes = save_workflow(
         base,
         api_key or "",
         parent_patched,
         None,
         parent_existing,
         args.dry_run,
+        mcp_cred_id,
     )
     print(f"parent: id={parent_id}")
 
+    unsecured = unsecured_triggers(parent_nodes)
+    if unsecured:
+        print(
+            f"warning: MCP trigger(s) {', '.join(unsecured)} have no usable authentication. "
+            "Set MCP_BEARER_CREDENTIAL_ID to an n8n HTTP Bearer Auth credential id, "
+            "or attach one in the n8n UI.",
+            file=sys.stderr,
+        )
     if args.activate:
+        if unsecured:
+            print("error: not activating the parent workflow without MCP authentication.", file=sys.stderr)
+            return 1
         activate_workflow(base, api_key or "", parent_id, args.dry_run)
 
     ui_base = external.rstrip("/")

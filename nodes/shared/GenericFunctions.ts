@@ -98,6 +98,22 @@ function stripStreamBimPaginationKeys(qs: IDataObject): IDataObject {
 	return next;
 }
 
+/**
+ * Whether a fetch-all loop has reached the last page.
+ *
+ * StreamBIM may cap the page size below the requested `page[limit]`. A short page is then the
+ * normal size, not the end, so only a page that is empty, or shorter than the largest page seen
+ * so far, ends the loop. A list that fits in one page costs one extra (empty) request.
+ * A page larger than requested means the endpoint ignores paging and sent everything.
+ */
+export function isLastStreamBimPage(
+	received: number,
+	largestSoFar: number,
+	requested: number,
+): boolean {
+	return received === 0 || received < largestSoFar || received > requested;
+}
+
 export type StreamBimListPagination = {
 	mode: 'single' | 'all';
 	pageLimit: number;
@@ -127,6 +143,7 @@ export async function streamBimJsonApiGetMany(
 
 	const maxPages = Math.max(1, Math.min(Math.floor(pagination.maxPages), 5000));
 	let skip = 0;
+	let largestPage = 0;
 	const all: IDataObject[] = [];
 	let mergedIncluded: IDataObject[] | undefined;
 	const includedSeen = new Set<string>();
@@ -160,8 +177,9 @@ export async function streamBimJsonApiGetMany(
 			}
 		}
 
-		if (chunk.length < limit) break;
-		skip += limit;
+		if (isLastStreamBimPage(chunk.length, largestPage, limit)) break;
+		largestPage = Math.max(largestPage, chunk.length);
+		skip += chunk.length;
 	}
 
 	const out: IDataObject = {
@@ -224,6 +242,7 @@ export async function streamBimPlainJsonGetMany(
 
 	const maxPages = Math.max(1, Math.min(Math.floor(pagination.maxPages), 5000));
 	let skip = 0;
+	let largestPage = 0;
 	const all: IDataObject[] = [];
 
 	for (let p = 0; p < maxPages; p++) {
@@ -231,8 +250,9 @@ export async function streamBimPlainJsonGetMany(
 		const res = await streamBimPlainJsonRequest.call(this, 'GET', path, tokenCache, undefined, qs);
 		const chunk = extractPlainJsonDataRows(res);
 		all.push(...chunk);
-		if (chunk.length < limit) break;
-		skip += limit;
+		if (isLastStreamBimPage(chunk.length, largestPage, limit)) break;
+		largestPage = Math.max(largestPage, chunk.length);
+		skip += chunk.length;
 	}
 
 	return {
