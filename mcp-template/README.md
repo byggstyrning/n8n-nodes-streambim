@@ -66,6 +66,7 @@ Files in [`workflows/`](workflows/):
 2. Import **`streambim-mcp-parent.json`**.
 3. Open the parent workflow. For **each** Call n8n Sub-Workflow Tool node, set **Workflow** to the matching imported subworkflow and map **Workflow inputs** if prompted (names must match the Execute Workflow trigger inputs).
 4. Create **HTTP Bearer Auth** (or Header Auth) credentials for **MCP clients** and attach them to the **MCP Server Trigger** (this secures the MCP endpoint—not StreamBIM; StreamBIM uses the credential on the StreamBIM node in each subworkflow).
+   The parent template ships with Bearer auth and the placeholder credential `YOUR_MCP_BEARER_CREDENTIAL_ID`. With `deploy_mcp_workflows_api.py`, set `MCP_BEARER_CREDENTIAL_ID` to fill it in; a re-deploy keeps auth already set on the trigger, and `--activate` refuses to publish a trigger without auth.
 5. On each **StreamBIM** node in the subworkflows, assign your **StreamBIM API** credential (replace any placeholder).
 6. Replace placeholder **`YOUR_PROJECT_ID`** in subworkflows with a real project ID, or pass `projectId` from the tool each time.
 7. **Activate** the parent workflow and use the **Production MCP URL** in your MCP client.

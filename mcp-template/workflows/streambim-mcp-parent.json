@@ -3,14 +3,20 @@
 	"nodes": [
 		{
 			"parameters": {
-				"authentication": "none",
+				"authentication": "bearerAuth",
 				"path": "streambim-mcp"
 			},
 			"id": "d4e5f6a7-0001-4000-8000-000000000001",
 			"name": "MCP Server Trigger",
 			"type": "@n8n/n8n-nodes-langchain.mcpTrigger",
 			"typeVersion": 2,
-			"position": [420, 300]
+			"position": [420, 300],
+			"credentials": {
+				"httpBearerAuth": {
+					"id": "YOUR_MCP_BEARER_CREDENTIAL_ID",
+					"name": "StreamBIM MCP clients"
+				}
+			}
 		},
 		{
 			"parameters": {
@@ -86,7 +92,7 @@
 		},
 		{
 			"parameters": {
-				"content": "## StreamBIM MCP parent\n\n1. Import the three `streambim-sub-*.json` workflows.\n2. Open each **Call n8n Sub-Workflow Tool** node and **select the matching subworkflow** (workflow picker).\n3. Set **MCP Server Trigger** authentication (Bearer recommended for production).\n4. Assign **StreamBIM API** credentials on each subworkflow’s StreamBIM node.\n5. Activate and use the **Production MCP URL** in your MCP client.",
+				"content": "## StreamBIM MCP parent\n\n1. Import the three `streambim-sub-*.json` workflows.\n2. Open each **Call n8n Sub-Workflow Tool** node and **select the matching subworkflow** (workflow picker).\n3. Attach your **HTTP Bearer Auth** credential to the **MCP Server Trigger** (the template ships with Bearer auth and a placeholder credential; never switch it to None on a reachable n8n).\n4. Assign **StreamBIM API** credentials on each subworkflow’s StreamBIM node.\n5. Activate and use the **Production MCP URL** in your MCP client.",
 				"height": 380,
 				"width": 460,
 				"color": 6

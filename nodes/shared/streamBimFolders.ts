@@ -1,5 +1,9 @@
 import type { IDataObject, ILoadOptionsFunctions, INodePropertyOptions } from 'n8n-workflow';
-import { streamBimJsonApiRequest, type StreamBimTokenCache } from './GenericFunctions';
+import {
+	isLastStreamBimPage,
+	streamBimJsonApiRequest,
+	type StreamBimTokenCache,
+} from './GenericFunctions';
 
 type FolderRow = {
 	id?: string | number;
@@ -15,8 +19,8 @@ type FolderRow = {
  * so options display as "Parent / Sub / Leaf (123)". A synthetic root option
  * (id "0") is always included.
  *
- * Fetches up to 20 pages of 1000 rows. If a project exceeds 20k folders the
- * dropdown will be capped; users can still pass the ID via an expression.
+ * Fetches pages of 1000 rows until the last page (with a 5000-page safety stop, the same as the
+ * shared fetch-all helper).
  */
 export async function loadStreamBimFolderOptions(
 	this: ILoadOptionsFunctions,
@@ -31,7 +35,8 @@ export async function loadStreamBimFolderOptions(
 	const all: FolderRow[] = [];
 	const limit = 1000;
 	let skip = 0;
-	for (let p = 0; p < 20; p++) {
+	let largestPage = 0;
+	for (let p = 0; p < 5000; p++) {
 		const res = (await streamBimJsonApiRequest.call(
 			this,
 			'GET',
@@ -42,8 +47,9 @@ export async function loadStreamBimFolderOptions(
 		)) as IDataObject;
 		const data = Array.isArray(res.data) ? (res.data as FolderRow[]) : [];
 		all.push(...data);
-		if (data.length < limit) break;
-		skip += limit;
+		if (isLastStreamBimPage(data.length, largestPage, limit)) break;
+		largestPage = Math.max(largestPage, data.length);
+		skip += data.length;
 	}
 
 	const byId = new Map<string, FolderRow>();

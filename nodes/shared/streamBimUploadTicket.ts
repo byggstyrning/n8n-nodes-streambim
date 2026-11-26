@@ -107,6 +107,15 @@ function getSourceStream(
 					return;
 				}
 				const next = new URL(res.headers.location, url).toString();
+				if (url.startsWith('https:') && !next.startsWith('https:')) {
+					reject(
+						new NodeOperationError(
+							ctx.getNode(),
+							'Source URL redirected from https to an insecure address; refusing to download over plain http',
+						),
+					);
+					return;
+				}
 				getSourceStream(ctx, next, redirectsLeft - 1).then(resolve, reject);
 				return;
 			}

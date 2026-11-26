@@ -163,7 +163,7 @@ export class StreamBimApi implements ICredentialType {
 
 	test: ICredentialTestRequest = {
 		request: {
-			baseURL: '={{ "https://" + ($credentials.environment || "app") + ".streambim.com" }}',
+			baseURL: '={{ "https://" + ((($credentials.environment || "") + "").trim() || "app") + ".streambim.com" }}',
 			url: '/mgw/api/v3/projects',
 			method: 'GET',
 			qs: {

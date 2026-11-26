@@ -18,9 +18,15 @@ export function getProjectIdString(ctx: IExecuteFunctions, i: number): string {
 }
 
 export function getProjectIdNumber(ctx: IExecuteFunctions, i: number): number {
-	const n = Number(ctx.getNodeParameter('projectId', i));
-	if (Number.isNaN(n)) {
-		throw new NodeOperationError(ctx.getNode(), 'Project is required', { itemIndex: i });
+	const raw = String(ctx.getNodeParameter('projectId', i) ?? '').trim();
+	// Number('') is 0, so an empty Project ID would otherwise filter on project 0.
+	const n = raw === '' ? NaN : Number(raw);
+	if (!Number.isInteger(n) || n <= 0) {
+		throw new NodeOperationError(
+			ctx.getNode(),
+			raw === '' ? 'Project is required' : `Project ID must be a positive whole number, got: ${raw}`,
+			{ itemIndex: i },
+		);
 	}
 	return n;
 }
