@@ -19,8 +19,8 @@ type FolderRow = {
  * so options display as "Parent / Sub / Leaf (123)". A synthetic root option
  * (id "0") is always included.
  *
- * Fetches up to 20 pages of 1000 rows. If a project exceeds 20k folders the
- * dropdown will be capped; users can still pass the ID via an expression.
+ * Fetches pages of 1000 rows until the last page (with a 5000-page safety stop, the same as the
+ * shared fetch-all helper).
  */
 export async function loadStreamBimFolderOptions(
 	this: ILoadOptionsFunctions,
@@ -36,7 +36,7 @@ export async function loadStreamBimFolderOptions(
 	const limit = 1000;
 	let skip = 0;
 	let largestPage = 0;
-	for (let p = 0; p < 20; p++) {
+	for (let p = 0; p < 5000; p++) {
 		const res = (await streamBimJsonApiRequest.call(
 			this,
 			'GET',

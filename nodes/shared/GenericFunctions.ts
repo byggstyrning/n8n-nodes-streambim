@@ -88,6 +88,51 @@ export async function getStreamBimAccessToken(
 	return token;
 }
 
+/** HTTP status of a failed `helpers.request` call, if it carries one. */
+function errorStatus(error: unknown): number | undefined {
+	const e = error as {
+		statusCode?: unknown;
+		httpCode?: unknown;
+		response?: { statusCode?: unknown };
+	};
+	const n = Number(e?.statusCode ?? e?.response?.statusCode ?? e?.httpCode);
+	return Number.isFinite(n) ? n : undefined;
+}
+
+/**
+ * Send an authenticated StreamBIM request. `build` gets the bearer token and returns the request.
+ *
+ * With username/password auth the idToken from the first login is cached for the whole run.
+ * When it expires mid-run the API answers 401: the cached token is then dropped, the node logs
+ * in again and the request is sent once more. Bearer (idToken) credentials have nothing to
+ * refresh, so their 401 is returned as is.
+ */
+export async function sendWithStreamBimToken(
+	this: IExecuteFunctions | ILoadOptionsFunctions | IHookFunctions,
+	tokenCache: StreamBimTokenCache | undefined,
+	build: (token: string) => IRequestOptions,
+): Promise<unknown> {
+	const token = await getStreamBimAccessToken.call(this, tokenCache);
+	try {
+		return await this.helpers.request(build(token));
+	} catch (error) {
+		if (errorStatus(error) !== 401) {
+			throw new NodeApiError(this.getNode(), error as any);
+		}
+		const credentials = await this.getCredentials('streamBimApi');
+		if (credentials.authentication !== 'usernamePassword') {
+			throw new NodeApiError(this.getNode(), error as any);
+		}
+		if (tokenCache) tokenCache.token = undefined;
+		const fresh = await getStreamBimAccessToken.call(this, tokenCache);
+		try {
+			return await this.helpers.request(build(fresh));
+		} catch (retryError) {
+			throw new NodeApiError(this.getNode(), retryError as any);
+		}
+	}
+}
+
 const PAGE_LIMIT_KEY = 'page[limit]';
 const PAGE_SKIP_KEY = 'page[skip]';
 
@@ -275,30 +320,25 @@ export async function streamBimJsonApiRequest(
 ): Promise<unknown> {
 	const credentials = await this.getCredentials('streamBimApi');
 	const baseUrl = getStreamBimBaseUrl(credentials, tokenCache);
-	const token = await getStreamBimAccessToken.call(this, tokenCache);
-	const options: IRequestOptions = {
-		method,
-		uri: `${baseUrl}${path}`,
-		headers: {
-			Authorization: `Bearer ${token}`,
-			Accept: 'application/vnd.api+json',
-			'Content-Type': 'application/vnd.api+json',
-		},
-		json: true,
-	};
-	if (body !== undefined && Object.keys(body).length > 0) {
-		options.body = body;
-	} else {
-		delete options.body;
-	}
-	if (Object.keys(qs).length > 0) {
-		options.qs = qs;
-	}
-	try {
-		return await this.helpers.request(options);
-	} catch (error) {
-		throw new NodeApiError(this.getNode(), error as any);
-	}
+	return sendWithStreamBimToken.call(this, tokenCache, (token) => {
+		const options: IRequestOptions = {
+			method,
+			uri: `${baseUrl}${path}`,
+			headers: {
+				Authorization: `Bearer ${token}`,
+				Accept: 'application/vnd.api+json',
+				'Content-Type': 'application/vnd.api+json',
+			},
+			json: true,
+		};
+		if (body !== undefined && Object.keys(body).length > 0) {
+			options.body = body;
+		}
+		if (Object.keys(qs).length > 0) {
+			options.qs = qs;
+		}
+		return options;
+	});
 }
 
 export async function streamBimPlainJsonRequest(
@@ -311,30 +351,25 @@ export async function streamBimPlainJsonRequest(
 ): Promise<unknown> {
 	const credentials = await this.getCredentials('streamBimApi');
 	const baseUrl = getStreamBimBaseUrl(credentials, tokenCache);
-	const token = await getStreamBimAccessToken.call(this, tokenCache);
-	const options: IRequestOptions = {
-		method,
-		uri: `${baseUrl}${path}`,
-		headers: {
-			Authorization: `Bearer ${token}`,
-			'Content-Type': 'application/json',
-			Accept: 'application/json',
-		},
-		json: true,
-	};
-	if (body !== undefined && Object.keys(body).length > 0) {
-		options.body = body;
-	} else {
-		delete options.body;
-	}
-	if (Object.keys(qs).length > 0) {
-		options.qs = qs;
-	}
-	try {
-		return await this.helpers.request(options);
-	} catch (error) {
-		throw new NodeApiError(this.getNode(), error as any);
-	}
+	return sendWithStreamBimToken.call(this, tokenCache, (token) => {
+		const options: IRequestOptions = {
+			method,
+			uri: `${baseUrl}${path}`,
+			headers: {
+				Authorization: `Bearer ${token}`,
+				'Content-Type': 'application/json',
+				Accept: 'application/json',
+			},
+			json: true,
+		};
+		if (body !== undefined && Object.keys(body).length > 0) {
+			options.body = body;
+		}
+		if (Object.keys(qs).length > 0) {
+			options.qs = qs;
+		}
+		return options;
+	});
 }
 
 export async function streamBimSyncTriggerRequest(
@@ -344,8 +379,7 @@ export async function streamBimSyncTriggerRequest(
 ): Promise<unknown> {
 	const credentials = await this.getCredentials('streamBimApi');
 	const baseUrl = getStreamBimBaseUrl(credentials, tokenCache);
-	const token = await getStreamBimAccessToken.call(this, tokenCache);
-	const options: IRequestOptions = {
+	return sendWithStreamBimToken.call(this, tokenCache, (token) => ({
 		method: 'POST',
 		uri: `${baseUrl}/project-${projectId}/api/v1/sync`,
 		headers: {
@@ -354,12 +388,7 @@ export async function streamBimSyncTriggerRequest(
 		},
 		body: {},
 		json: true,
-	};
-	try {
-		return await this.helpers.request(options);
-	} catch (error) {
-		throw new NodeApiError(this.getNode(), error as any);
-	}
+	}));
 }
 
 export async function streamBimGetSyncStartedRequest(
@@ -369,20 +398,14 @@ export async function streamBimGetSyncStartedRequest(
 ): Promise<unknown> {
 	const credentials = await this.getCredentials('streamBimApi');
 	const baseUrl = getStreamBimBaseUrl(credentials, tokenCache);
-	const token = await getStreamBimAccessToken.call(this, tokenCache);
-	const options: IRequestOptions = {
+	return sendWithStreamBimToken.call(this, tokenCache, (token) => ({
 		method: 'GET',
 		uri: `${baseUrl}/project-${projectId}/api/v1/sync`,
 		headers: {
 			Authorization: `Bearer ${token}`,
 		},
 		json: true,
-	};
-	try {
-		return await this.helpers.request(options);
-	} catch (error) {
-		throw new NodeApiError(this.getNode(), error as any);
-	}
+	}));
 }
 
 /** GET returning plain text (e.g. attachment download link path). */
@@ -394,29 +417,26 @@ export async function streamBimTextRequest(
 ): Promise<string> {
 	const credentials = await this.getCredentials('streamBimApi');
 	const baseUrl = getStreamBimBaseUrl(credentials, tokenCache);
-	const token = await getStreamBimAccessToken.call(this, tokenCache);
-	const options: IRequestOptions = {
-		method: 'GET',
-		uri: `${baseUrl}${path}`,
-		headers: {
-			Authorization: `Bearer ${token}`,
-			Accept: 'application/vnd.api+json',
-			'Content-Type': 'application/vnd.api+json',
-		},
-		json: false,
-	};
-	if (Object.keys(qs).length > 0) {
-		options.qs = qs;
-	}
-	try {
-		const response = await this.helpers.request(options);
-		if (typeof response === 'string') {
-			return response;
+	const response = await sendWithStreamBimToken.call(this, tokenCache, (token) => {
+		const options: IRequestOptions = {
+			method: 'GET',
+			uri: `${baseUrl}${path}`,
+			headers: {
+				Authorization: `Bearer ${token}`,
+				Accept: 'application/vnd.api+json',
+				'Content-Type': 'application/vnd.api+json',
+			},
+			json: false,
+		};
+		if (Object.keys(qs).length > 0) {
+			options.qs = qs;
 		}
-		return JSON.stringify(response);
-	} catch (error) {
-		throw new NodeApiError(this.getNode(), error as any);
+		return options;
+	});
+	if (typeof response === 'string') {
+		return response;
 	}
+	return JSON.stringify(response);
 }
 
 export async function streamBimS3Put(

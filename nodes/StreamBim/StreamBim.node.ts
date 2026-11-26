@@ -586,7 +586,14 @@ export class StreamBim implements INodeType {
 				];
 			} catch (error) {
 				if (this.continueOnFail()) {
-					return [[{ json: { error: (error as Error).message }, pairedItem: { item: 0 } }]];
+					// Plan and Apply read all items as one batch, so the error belongs to every item.
+					const message = (error as Error).message;
+					return [
+						items.map((_, item) => ({
+							json: { error: message, relinkOperation: relinkOp },
+							pairedItem: { item },
+						})),
+					];
 				}
 				throw error;
 			}
